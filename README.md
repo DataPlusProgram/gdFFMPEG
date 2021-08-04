@@ -11,7 +11,7 @@ The most common error is bad audio playback under certain conditions.
   
 ![](https://i.imgur.com/TRur6KL.png)
   
-##Usage
+## Usage
 Refer to the provided example project for usage(provided for Windows only)  
 
 ![](https://i.imgur.com/k4yM430.png)
