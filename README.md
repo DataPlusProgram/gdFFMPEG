@@ -1,12 +1,13 @@
 # gdFFMPEG
 
-This is an FFMPEG implementation via GDNative.   
-The implementation is semi-naive so not super optimal.  
+This is a Godot FFMPEG implementation via GDNative.    
+  
+The implementation writes directly to a TexutreRect so is not super optimal.  
   
 Currently this project has only been tested for Windows and only the Windows binaries are provided here.  
-The binaries for other platforms will have to be manually compiled.
+The binaries for other platforms will have to be manually compiled by the user.
   
-It should work for any format the FFMPEG but I've not extensively tested it there are probably many cases of incompatibility not yet found.  
+This should work for any format the FFMPEG supports but I've not extensively tested it there are probably many incompatibilities not yet found.  
 The most common error is bad audio playback under certain conditions.  
   
 ![](https://i.imgur.com/TRur6KL.png)
