@@ -1,0 +1,11 @@
+[gd_resource type="NativeScript" load_steps=2 format=2]
+
+[sub_resource type="GDNativeLibrary" id=1]
+load_once = false
+entry/Windows.64 = "res://bin/win64/ffmpeg/gdFFMPEG.dll"
+dependency/Windows.64 = [ "res://bin/win64/ffmpeg/avcodec-59.dll", "res://bin/win64/ffmpeg/avdevice-59.dll", "res://bin/win64/ffmpeg/avfilter-8.dll", "res://bin/win64/ffmpeg/avformat-59.dll", "res://bin/win64/ffmpeg/avutil-57.dll", "res://bin/win64/ffmpeg/swresample-4.dll", "res://bin/win64/ffmpeg/swscale-6.dll" ]
+
+[resource]
+resource_name = "vid"
+class_name = "videoClass"
+library = SubResource( 1 )
