@@ -4,7 +4,7 @@ This is a Godot FFMPEG implementation via GDNative.
   
 The implementation writes directly to a TexutreRect so is not super optimal.  
   
-*Currently this project has only been tested for Windows* and only the Windows binaries are provided here.  
+**Currently this project has only been tested for Windows** and only the Windows binaries are provided here.  
 The binaries for other platforms will have to be manually compiled by the user.
   
 This should work for any format the FFMPEG supports but I've not extensively tested it there are probably many incompatibilities not yet found.  
