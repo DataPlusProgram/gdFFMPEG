@@ -11,8 +11,12 @@ config_version=4
 [application]
 
 config/name="Gd Vido"
-run/main_scene="res://Node2D.tscn"
+run/main_scene="res://Main Scene.tscn"
 config/icon="res://icon.png"
+
+[global]
+
+scene=false
 
 [physics]
 
