@@ -66,6 +66,7 @@ class videoClass : public Node
 		~videoClass();
 
 		Dictionary loadFile(String path);
+		void close();
 		static void _register_methods();
 		void _init();
 
@@ -74,6 +75,7 @@ class videoClass : public Node
 		void printError(int);
 		int readFrame();
 		int width, height;
+		bool initialized = false;
 		bool hasAudio = false;
 		bool hasVideo = false;
 		int sampleRate, channels;
@@ -85,7 +87,8 @@ class videoClass : public Node
 		std::deque<audioFrame> audioBuffer;
 		SimplePool* imagePool;
 		Array getAudioInfo();
-		
+		SwsContext* sws_scalar_ctx = nullptr;
+		unsigned char* data = nullptr;
 		Array popImageBuffer();
 		int getImageBufferSize();
 		void clearPoolEntry(int id);
@@ -112,7 +115,8 @@ class videoClass : public Node
 
 		double curVideoTime = 9999;
 		double curAudioTime = 9999;
-
+		
+		
 };
 
 

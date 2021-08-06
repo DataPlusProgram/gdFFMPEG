@@ -19,6 +19,7 @@ void godot::videoClass::_register_methods()
 	register_method("getImageBufferSize", &godot::videoClass::getImageBufferSize);
 	register_method("popImageBuffer", &godot::videoClass::popImageBuffer);
 	register_method("clearPoolEntry", &godot::videoClass::clearPoolEntry);
+	register_method("close", &godot::videoClass::close);
 }
 
 
@@ -102,7 +103,36 @@ Dictionary godot::videoClass::loadFile(String path)
 	dict["hasAudio"] = hasAudio;
 	dict["hasVideo"] = hasVideo;
 	dict["error"] = ret;
+	initialized = true;
 	return dict;
+}
+
+void godot::videoClass::close()
+{
+	hasVideo = false;
+	hasAudio = false;
+	curVideoTime = 9999;
+	curAudioTime = 9999;
+
+	videoFrameBuffer.clear();
+	imageBuffer.clear();
+	
+
+	for (int i = 0; i < audioBuffer.size(); i++)
+	{
+		delete[] audioBuffer[i].samples;
+	}
+
+	audioBuffer.clear();
+	imagePool->pool.clear();
+	sws_scalar_ctx = nullptr;
+	initialized = false;
+	delete[] data;
+	data = nullptr;
+	if (hasVideo) avcodec_close(videoStream.codecCtx);
+	if (hasAudio) avcodec_close(audioStream.codecCtx);
+
+	avformat_close_input(&formatCtx);
 }
 
 void godot::videoClass::printError(int err)
@@ -180,7 +210,9 @@ int godot::videoClass::readFrame()
 
 int godot::videoClass::process()
 {
-	
+	if (initialized == false)
+		return 1;
+
 	if (hasVideo)
 		if (imagePool->pool.size() > 200)//memory leak killswitch
 			return -1;
@@ -288,7 +320,7 @@ PoolEntry godot::videoClass::rgbArrToImage(unsigned char* data)
 	}
 
 
-	auto w = rgbGodot.write();
+	PoolByteArray::Write w = rgbGodot.write();
 	uint8_t* p = w.ptr();
 	memcpy(p, data, size);
 	
@@ -364,13 +396,17 @@ void godot::videoClass::processVideoFrame(AVFrame* frame)
 	AVCodecParameters* codecParam = videoStream.codecParams;
 	AVPixelFormat pixFormat = videoStream.codecCtx->pix_fmt;
 
-	static SwsContext* sws_scalar_ctx = sws_getContext(width, height, pixFormat, width, height, AVPixelFormat::AV_PIX_FMT_RGB0, SWS_FAST_BILINEAR, NULL, NULL, NULL);
+	if (sws_scalar_ctx == nullptr)
+		sws_scalar_ctx = sws_getContext(width, height, pixFormat, width, height, AVPixelFormat::AV_PIX_FMT_RGB0, SWS_FAST_BILINEAR, NULL, NULL, NULL);
+	
 	if (sws_scalar_ctx == NULL)
 		return;
 
 	int size = width * height * 5;//this should be 4 but there was a certain video that crashed and when changed to 5 it didn't. 
 
-	static unsigned char* data = new unsigned char[size];
+	if (data == nullptr)
+		data = new unsigned char[size];
+
 	unsigned char* dest[4] = { data,NULL,NULL,NULL };
 
 	int dest_linesize[4] = { width * 4,0,0,0 };
