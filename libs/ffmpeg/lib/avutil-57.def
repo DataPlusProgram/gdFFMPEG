@@ -269,6 +269,7 @@ EXPORTS
     av_image_check_size2
     av_image_copy
     av_image_copy_plane
+    av_image_copy_plane_uc_from
     av_image_copy_to_buffer
     av_image_copy_uc_from
     av_image_fill_arrays

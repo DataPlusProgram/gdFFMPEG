@@ -6,6 +6,7 @@
 [sub_resource type="ImageTexture" id=1]
 
 [node name="TextureRect" type="TextureRect"]
+process_priority = 7
 anchor_right = 1.0
 anchor_bottom = 1.0
 texture = SubResource( 1 )
@@ -15,7 +16,7 @@ script = ExtResource( 1 )
 __meta__ = {
 "_edit_use_anchors_": false
 }
-videoPath = "res://videos/big_buck_bunny.mp4"
+audioBufferLength = 0.2
 looped = true
 
 [node name="Node" type="Node" parent="."]

@@ -53,7 +53,7 @@ struct StreamInfo
 	StreamInfo(int index,const AVCodec* codec, AVCodecParameters* codecParams);
 
 };
-
+ 
 namespace godot
 {
 
@@ -81,27 +81,34 @@ class videoClass : public Node
 		int sampleRate, channels;
 		double latestTime = 0;
 		int imageBufferSize = 8;
+		PoolByteArray rgbGodot;
 		std::deque<AVFrame*> videoFrameBuffer;
 		std::deque<AVFrame*> audioFrameBuffer;
-		
 		std::deque<audioFrame> audioBuffer;
 		SimplePool* imagePool;
 		Array getAudioInfo();
 		SwsContext* sws_scalar_ctx = nullptr;
 		unsigned char* data = nullptr;
 		Array popImageBuffer();
+		PoolByteArray popRawBuffer();
 		int getImageBufferSize();
 		void clearPoolEntry(int id);
+		int getAudioBufferSize();
+		int getSizeOfNextAudioFrame();
 		PoolVector2Array popSampleBuffer();
 		void processVideoFrame(AVFrame* frame);
 		void processAudioFrame(AVFrame* frame);
 		PoolEntry rgbArrToImage(unsigned char* data);
+		PoolByteArray rgbArrToByte(unsigned char* data);
 		
 		std::deque<ImageFrame> imageBuffer;
+		std::deque<Array> rawBuffer;
 		Vector2 getDimensions();
 		audioFrame fetchAudioBuffer(); 
 		double getDuration();
 		
+		void processAudioFrame2(AVFrame* frame);
+
 		void seek(float msec);
 		void dgbPrintPoolSize();
 

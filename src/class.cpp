@@ -10,13 +10,16 @@ void godot::videoClass::_register_methods()
 	register_method("process", &godot::videoClass::process);
 	register_method("getDimensions", &godot::videoClass::getDimensions);
 	register_method("popAudioBuffer", &godot::videoClass::popSampleBuffer);
+	register_method("popRawBuffer", &godot::videoClass::popRawBuffer);
 	register_method("getAudioInfo", &godot::videoClass::getAudioInfo);
+	register_method("getSizeOfNextAudioFrame", &godot::videoClass::getSizeOfNextAudioFrame);
 	register_method("getCurAudioTime", &godot::videoClass::getCurAudioTime);
 	register_method("getCurVideoTime", &godot::videoClass::getCurVideoTime);
 	register_method("getDuration", &godot::videoClass::getDuration);
 	register_method("seek", &godot::videoClass::seek);
 	register_method("dgbPrintPoolSize", &godot::videoClass::dgbPrintPoolSize);
 	register_method("getImageBufferSize", &godot::videoClass::getImageBufferSize);
+	register_method("getAudioBufferSize", &godot::videoClass::getAudioBufferSize);
 	register_method("popImageBuffer", &godot::videoClass::popImageBuffer);
 	register_method("clearPoolEntry", &godot::videoClass::clearPoolEntry);
 	register_method("close", &godot::videoClass::close);
@@ -45,9 +48,9 @@ godot::videoClass::~videoClass()
 Dictionary godot::videoClass::loadFile(String path)
 {
 	Dictionary dict;
+
 	formatCtx = avformat_alloc_context();
 	int ret = avformat_open_input(&formatCtx, path.alloc_c_string(), NULL, NULL);
-	avformat_find_stream_info(formatCtx, NULL);
 
 	if (ret != 0)
 	{
@@ -56,13 +59,14 @@ Dictionary godot::videoClass::loadFile(String path)
 		return dict;
 	}
 
+	avformat_find_stream_info(formatCtx, NULL);
 
 	AVCodec* codec = nullptr;
 	AVCodecParameters* codecParams = nullptr;
 	const AVCodec* curCodec;
 	
-
-
+	durationSec = formatCtx->duration / 1000000.0;
+	
 	for (int i = 0; i < formatCtx->nb_streams; ++i)
 	{
 		codecParams = formatCtx->streams[i]->codecpar;
@@ -81,7 +85,6 @@ Dictionary godot::videoClass::loadFile(String path)
 			
 			ratio = (double)timeBase.num / (double)timeBase.den;
 			
-			durationSec = formatCtx->duration / 1000000.0;
 			width = codecParams->width;
 			height = codecParams->height;
 			imagePool = new SimplePool(Vector2(width,height));
@@ -95,6 +98,7 @@ Dictionary godot::videoClass::loadFile(String path)
 			audioStream = StreamInfo(i, curCodec, codecParams);
 			sampleRate = audioStream.codecCtx->sample_rate;
 			channels = audioStream.codecCtx->channels;
+
 			hasAudio = true;
 		}
 
@@ -109,14 +113,25 @@ Dictionary godot::videoClass::loadFile(String path)
 
 void godot::videoClass::close()
 {
-	hasVideo = false;
-	hasAudio = false;
+
 	curVideoTime = 9999;
 	curAudioTime = 9999;
 
+	for (int i = 0; i < videoFrameBuffer.size(); i++)
+	{
+		av_frame_free(&videoFrameBuffer[i]);
+	}
+
+	for (int i = 0; i < audioFrameBuffer.size(); i++)
+	{
+		av_frame_free(&audioFrameBuffer[i]);
+	}
+
 	videoFrameBuffer.clear();
+	audioFrameBuffer.clear();
+
+	rawBuffer.clear();
 	imageBuffer.clear();
-	
 
 	for (int i = 0; i < audioBuffer.size(); i++)
 	{
@@ -127,10 +142,30 @@ void godot::videoClass::close()
 	imagePool->pool.clear();
 	sws_scalar_ctx = nullptr;
 	initialized = false;
-	delete[] data;
-	data = nullptr;
+	if (data != nullptr)
+	{
+		delete[] data;
+		data = nullptr;
+	}
+	rgbGodot.resize(0);
+
+
 	if (hasVideo) avcodec_close(videoStream.codecCtx);
 	if (hasAudio) avcodec_close(audioStream.codecCtx);
+
+	if (audioConv != nullptr)
+	{
+
+		swr_close(audioConv);
+		swr_free(&audioConv);
+		audioConv = nullptr;
+	}
+
+	videoStream.index = -1;
+	audioStream.index = -1;
+
+	hasVideo = false;
+	hasAudio = false;
 
 	avformat_close_input(&formatCtx);
 }
@@ -171,7 +206,8 @@ int godot::videoClass::readFrame()
 			return -1;
 		}
 
-		if (av_packet->size > 0)
+
+		if (av_packet->size > 0 )
 		{
 			AVFrame* av_frame = av_frame_alloc();
 			response = avcodec_receive_frame(targetStream.codecCtx, av_frame);
@@ -210,6 +246,7 @@ int godot::videoClass::readFrame()
 
 int godot::videoClass::process()
 {
+	int ret = 1;
 	if (initialized == false)
 		return 1;
 
@@ -217,29 +254,37 @@ int godot::videoClass::process()
 		if (imagePool->pool.size() > 200)//memory leak killswitch
 			return -1;
 
-	if (!videoOver && imageBuffer.size() < imageBufferSize)
+
+	bool condition1 = hasVideo && !videoOver && videoFrameBuffer.size() < 4;
+	bool condition2 = hasAudio && !videoOver && audioFrameBuffer.size() < 4;
+
+	
+
+
+	if (condition1 || condition2)
 	{
-		int ret = readFrame();
-		if (ret == -1) return -1;
+		ret = readFrame();
+		//if (ret == -1) return -1;
 	}
 	
-	if (videoFrameBuffer.size() > 0 && imageBuffer.size() < imageBufferSize)//change if to while to process whole buffer
+	if (videoFrameBuffer.size() > 0 && rawBuffer.size() < imageBufferSize)//change if to while to process whole buffer
 	{
 		processVideoFrame(videoFrameBuffer.front());
 		videoFrameBuffer.pop_front();
 	}
 
-	if (audioFrameBuffer.size() > 0)
+	if (audioFrameBuffer.size() > 0 && audioBuffer.size() < 300)
 	{
-		processAudioFrame(audioFrameBuffer.front());
+		processAudioFrame2(audioFrameBuffer.front());
 		audioFrameBuffer.pop_front();
 	}
 
 
 
-	if (imageBuffer.size() > 0) curVideoTime = imageBuffer[0].timeStamp;
+	if (rawBuffer.size() > 0) curVideoTime = rawBuffer[0][1];
 	if (audioBuffer.size() > 0) curAudioTime = audioBuffer[0].timeStamp;
-	return 1;
+
+	return ret;
 }
 
 double godot::videoClass::getCurVideoTime()
@@ -294,7 +339,10 @@ Array godot::videoClass::popImageBuffer()
 		img = imageBuffer[0].img;
 		arr.append(imageBuffer[0].img);
 		arr.append(imageBuffer[0].poolId);
+		curVideoTime = imageBuffer[0].timeStamp;
 		imageBuffer.pop_front();
+
+
 
 		if (imageBuffer.size() > 0)
 		{
@@ -305,32 +353,67 @@ Array godot::videoClass::popImageBuffer()
 	return arr;
 }
 
+PoolByteArray godot::videoClass::popRawBuffer()
+{
+	//Dictionary dict = rawBuffer[0];
+	Array arr = rawBuffer[0];
+	PoolByteArray r = arr[0];//dict["data"];
+	
+	curVideoTime = rawBuffer[0][1];
+	rawBuffer.pop_front();
+	
+
+	if (rawBuffer.size() > 0)
+		curVideoTime = rawBuffer[0][1];
+
+	return r;
+}
+
+
+PoolByteArray godot::videoClass::rgbArrToByte(unsigned char* data)
+{
+	PoolByteArray ret;
+	
+	int size = width * height * 4;
+
+	ret.resize(size);
+
+	PoolByteArray::Write w = ret.write();
+	uint8_t* p = w.ptr();
+	memcpy(p, data, size);
+
+
+	return ret;
+}
+
+
 PoolEntry godot::videoClass::rgbArrToImage(unsigned char* data)
 {
-	PoolByteArray rgbGodot;
 	PoolEntry poolE = imagePool->fetch();
-
 	Ref<Image> image = poolE.data.img;
 
 	int size = width * height * 4;
+
+
 
 	if (rgbGodot.size() != size)
 	{
 		rgbGodot.resize(size);
 	}
 
+	static PoolByteArray::Write w = rgbGodot.write();
+	static uint8_t* p = w.ptr();
 
-	PoolByteArray::Write w = rgbGodot.write();
-	uint8_t* p = w.ptr();
+
 	memcpy(p, data, size);
-	
+
 	Dictionary d;
 	d["width"] = width;
 	d["height"] = height;
 	d["mipmaps"] = false;
 	d["format"] = "RGBA8";
 	d["data"] = rgbGodot;
-	
+
 	image->_set_data(d);
 
 	return poolE;
@@ -339,12 +422,25 @@ PoolEntry godot::videoClass::rgbArrToImage(unsigned char* data)
 
 int godot::videoClass::getImageBufferSize()
 {
-	return imageBuffer.size();
+	return rawBuffer.size();
+	//return imageBuffer.size();
 }
 
 void godot::videoClass::clearPoolEntry(int id)
 {
 	imagePool->free(id);
+}
+
+int godot::videoClass::getAudioBufferSize()
+{
+	return audioBuffer.size();
+}
+
+int godot::videoClass::getSizeOfNextAudioFrame()
+{
+	if (audioBuffer.size() == 0)
+		return INFINITY;
+	return audioBuffer[0].size;
 }
 
 PoolVector2Array godot::videoClass::popSampleBuffer()
@@ -359,7 +455,6 @@ PoolVector2Array godot::videoClass::popSampleBuffer()
 		audioBuffer.pop_front();
 
 		int size = (audioFrame.size/2)/2;
-
 		sampleGodot.resize(size);
 		
 
@@ -395,9 +490,9 @@ void godot::videoClass::processVideoFrame(AVFrame* frame)
 {
 	AVCodecParameters* codecParam = videoStream.codecParams;
 	AVPixelFormat pixFormat = videoStream.codecCtx->pix_fmt;
-
+	
 	if (sws_scalar_ctx == nullptr)
-		sws_scalar_ctx = sws_getContext(width, height, pixFormat, width, height, AVPixelFormat::AV_PIX_FMT_RGB0, SWS_FAST_BILINEAR, NULL, NULL, NULL);
+		sws_scalar_ctx = sws_getContext(width, height, pixFormat, width, height, AVPixelFormat::AV_PIX_FMT_RGBA, SWS_FAST_BILINEAR, NULL, NULL, NULL);
 	
 	if (sws_scalar_ctx == NULL)
 		return;
@@ -414,13 +509,40 @@ void godot::videoClass::processVideoFrame(AVFrame* frame)
 	sws_scale(sws_scalar_ctx, frame->data, frame->linesize, 0, height, dest, dest_linesize);//converting YUV to RGBA
 	double timestamp = frame->pts * ratio;
 	
-	PoolEntry imgPe = rgbArrToImage(data);
-	
-	ImageFrame imageFrame  = imgPe.data;
-	imageFrame.timeStamp = timestamp;
-	imageBuffer.push_back(imageFrame);
+	if (frame->pts < 0 && frame->pkt_dts < 0)
+	{
 
-	curVideoTime = imageBuffer[0].timeStamp;
+		std::cout << "negative dts found\n";
+	}
+
+	if (frame->pts < 0 && frame->pkt_dts > 0)
+	{
+		timestamp = frame->pkt_dts * ratio;
+	}
+
+
+	if (rawBuffer.size() == 0)
+	{
+		curVideoTime = timestamp;
+	}
+
+	//PoolEntry imgPe = rgbArrToImage(data);
+	
+	//Dictionary dict;
+	//dict["data"] =rgbArrToByte(data);
+	//dict["timestamp"] = timestamp;
+	Array arr;
+	arr.push_back(rgbArrToByte(data));
+	arr.push_back(timestamp);
+
+
+	//ImageFrame imageFrame  = imgPe.data;
+	//imageFrame.timeStamp = timestamp;
+	//imageBuffer.push_back(imageFrame);
+	rawBuffer.push_back(arr);
+	curVideoTime = rawBuffer[0][1];
+	
+
 	av_frame_free(&frame);
 
 }
@@ -433,24 +555,104 @@ void godot::videoClass::processAudioFrame(AVFrame* frame)
 	AVSampleFormat sampleForamt = audioStream.codecCtx->sample_fmt;
 	int out_linesize;
 
+
 	int dataSize = av_samples_get_buffer_size(&out_linesize, channels, frame->nb_samples, sampleForamt, 1);
+
+	if (dataSize == 0)
+	{
+		int t = 3;
+	}
 
 	if (audioConv == nullptr)
 	{
+
+		
 		audioConv = swr_alloc();
-		audioConv = swr_alloc_set_opts(audioConv, AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, frame->sample_rate, audioStream.codecCtx->channel_layout, sampleForamt, sampleRate, 0, NULL);
-		swr_init(audioConv);
+		audioConv = swr_alloc_set_opts(audioConv, AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, frame->sample_rate, av_get_default_channel_layout(channels), sampleForamt, sampleRate, 1, NULL);
+		if (audioConv < 0)
+			int t = 3;
+
+		int err = swr_init(audioConv);
+		if (err < 0)
+			printError(err);
 
 	}
 
 	uint8_t* out_buffer = new uint8_t[dataSize];
 	int test = swr_convert(audioConv, &out_buffer, out_linesize, (const uint8_t**)frame->data, frame->nb_samples);
+
+	if (test < 0)
+	{
+		printError(test);
+	}
+
 	double timestamp = frame->pts * audioRatio;
+	if (frame->pts < 0) timestamp = curAudioTime + audioRatio;
+
+
 
 	audioBuffer.push_back(audioFrame(out_linesize, out_buffer,timestamp));
 	av_frame_free(&frame);
 }
 
+void videoClass::processAudioFrame2(AVFrame* frame)
+{
+	AVSampleFormat sampleForamt = audioStream.codecCtx->sample_fmt;
+
+	int out_linesize;
+	//int dataSize = av_samples_get_buffer_size(&out_linesize, channels, frame->nb_samples, sampleForamt, 1);
+	int dataSize = av_samples_get_buffer_size(&out_linesize, 2, frame->nb_samples, AV_SAMPLE_FMT_S16, 1);
+
+	if (frame->pkt_size == 0)
+	{
+		return;
+	}
+
+	if (dataSize < 0)
+	{
+		printError(dataSize);
+		av_frame_free(&frame);
+
+		return;
+	}
+
+	uint8_t* out_buffer = new uint8_t[dataSize];
+
+	if (audioConv == nullptr)
+	{
+		audioConv = swr_alloc();
+
+		audioConv = swr_alloc_set_opts(audioConv, AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, frame->sample_rate, av_get_default_channel_layout(channels), sampleForamt, sampleRate, 1, NULL);
+		int err = swr_init(audioConv);
+		if (err != 0)
+		{
+			printError(err);
+			audioConv == nullptr;
+			return;
+		}
+
+	}
+
+	int dst_nb_samples = (int)av_rescale_rnd(swr_get_delay(audioConv, frame->sample_rate) + frame->nb_samples, sampleRate, AV_CH_LAYOUT_STEREO, AV_ROUND_INF);
+	int size2 = swr_convert(audioConv, &out_buffer, dst_nb_samples, (const uint8_t**)frame->data, frame->nb_samples);
+
+	double timestamp = frame->pts * audioRatio;
+
+	int t = channels * size2 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
+
+	int remaining = dataSize - size2;
+
+
+	if (timestamp < 0)
+	{
+		timestamp = getCurVideoTime();
+	}
+
+
+	//audioBuffer.push_back(audioFrame(channels * size2 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16), out_buffer, timestamp));
+	audioBuffer.push_back(audioFrame(dataSize, out_buffer, timestamp));
+
+}
 
 
 Vector2 godot::videoClass::getDimensions()
@@ -472,6 +674,20 @@ StreamInfo::StreamInfo(int index,const AVCodec* codec, AVCodecParameters* codecP
 	this->codecParams = codecParams;
 	this->codecCtx = avcodec_alloc_context3(codec);
 
+
+	if (this->codec->id != AV_CODEC_ID_PNG && this->codec->id != AV_CODEC_ID_WEBP && this->codec->id != AV_CODEC_ID_PSD)
+	{
+
+		this->codecCtx->thread_count = 0;
+
+		if (codec->capabilities | AV_CODEC_CAP_FRAME_THREADS)
+			this->codecCtx->thread_type = FF_THREAD_FRAME;
+		else if (codec->capabilities | AV_CODEC_CAP_SLICE_THREADS)
+			this->codecCtx->thread_type = FF_THREAD_SLICE;
+		else
+			this->codecCtx->thread_count = 1;
+	}
+
 	avcodec_parameters_to_context(codecCtx, codecParams);
 	avcodec_open2(codecCtx, codec, NULL);
 }
@@ -492,13 +708,23 @@ audioFrame::audioFrame(int size, uint8_t* samples,double timeStamp)
 
 void videoClass::seek(float sec)
 {
-	avformat_seek_file(formatCtx, videoStream.index, 0, sec, sec, 0);
-	avcodec_flush_buffers(audioStream.codecCtx);
-	avcodec_flush_buffers(videoStream.codecCtx);
+
+	
+	int ret = av_seek_frame(formatCtx, videoStream.index, sec / ratio, 0);
+	printError(ret);
+
+	if (hasAudio) avcodec_flush_buffers(audioStream.codecCtx);
+	if (hasVideo) avcodec_flush_buffers(videoStream.codecCtx);
 
 
+
+	audioBuffer.clear();
 	videoFrameBuffer.clear();
-	imageBuffer.clear();
+
+	/*for (int i = 0; i < rgbBuffer.size(); i++)
+	{
+		delete[] rgbBuffer[i].rgb;
+	}*/
 
 
 	for (int i = 0; i < audioBuffer.size(); i++)
@@ -506,9 +732,9 @@ void videoClass::seek(float sec)
 		delete[] audioBuffer[i].samples;
 	}
 
+
+	rawBuffer.clear();
 	audioBuffer.clear();
-	curVideoTime = 0;
-	curAudioTime = 0;
 
 }
 

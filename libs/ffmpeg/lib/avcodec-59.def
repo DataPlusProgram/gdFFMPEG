@@ -144,6 +144,7 @@ EXPORTS
     avcodec_version
     avpriv_ac3_channel_layout_tab
     avpriv_ac3_parse_header
+    avpriv_adts_header_parse
     avpriv_codec_get_cap_skip_frame_fill_param
     avpriv_dca_convert_bitstream
     avpriv_dca_parse_core_frame_header
@@ -151,7 +152,8 @@ EXPORTS
     avpriv_dnxhd_get_frame_size
     avpriv_dnxhd_get_hr_frame_size
     avpriv_dnxhd_get_interlaced
-    avpriv_do_elbg
+    avpriv_elbg_do
+    avpriv_elbg_free
     avpriv_exif_decode_ifd
     avpriv_find_pix_fmt
     avpriv_find_start_code
@@ -159,7 +161,6 @@ EXPORTS
     avpriv_fits_header_parse_line
     avpriv_get_raw_pix_fmt_tags
     avpriv_h264_has_num_reorder_frames
-    avpriv_init_elbg
     avpriv_mjpeg_bits_ac_chrominance
     avpriv_mjpeg_bits_ac_luminance
     avpriv_mjpeg_bits_dc_chrominance
